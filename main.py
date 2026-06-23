@@ -20,6 +20,11 @@ from scipy import signal
 from tensorflow.keras.applications.vgg16 import preprocess_input as vgg16_preprocess
 from tensorflow.keras.applications.vgg19 import preprocess_input as vgg19_preprocess
 
+from visualization import (
+    apply_gradcam_colormap,
+    apply_spectrogram_colormap,
+    render_axis_panel,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 MODELS_DIR = BASE_DIR / "models"
@@ -44,7 +49,7 @@ ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
         "ALLOWED_ORIGINS",
-        "http://localhost:3000,http://127.0.0.1:3000,https://pulmosense.vercel.app",
+        "http://localhost:3000,http://127.0.0.1:3000,https://pulmosense-prod.vercel.app",
     ).split(",")
     if origin.strip()
 ]
@@ -299,7 +304,9 @@ def wav_bytes_to_stft_image(wav_bytes: bytes) -> tuple[np.ndarray, np.ndarray, i
 
     image = np.flipud((normalized * 255).astype(np.uint8))
     pil_image = Image.fromarray(image, mode="L").resize(IMG_SIZE, RESAMPLE_BILINEAR)
-    rgb_image = pil_image.convert("RGB")
+    rgb_image = apply_spectrogram_colormap(
+        np.asarray(pil_image, dtype=np.float32) / 255.0
+    )
 
     return np.asarray(rgb_image, dtype=np.uint8), audio, sr
 
@@ -331,11 +338,7 @@ def predict_image(
 
 
 def colorize_heatmap(heatmap: np.ndarray) -> np.ndarray:
-    values = np.clip(heatmap, 0, 1)
-    red = np.clip(1.5 - np.abs(4 * values - 3), 0, 1)
-    green = np.clip(1.5 - np.abs(4 * values - 2), 0, 1)
-    blue = np.clip(1.5 - np.abs(4 * values - 1), 0, 1)
-    return (np.stack([red, green, blue], axis=-1) * 255).astype(np.uint8)
+    return apply_gradcam_colormap(heatmap)
 
 
 def describe_frequency_focus(heatmap: np.ndarray) -> str:
@@ -406,7 +409,7 @@ def gradcam_outputs(
     heatmap_resized = np.asarray(heatmap_image, dtype=np.float32) / 255.0
     heatmap_rgb = colorize_heatmap(heatmap_resized)
 
-    overlay = (stft_image.astype(np.float32) * 0.6 + heatmap_rgb.astype(np.float32) * 0.4)
+    overlay = stft_image.astype(np.float32) * 0.6 + heatmap_rgb.astype(np.float32) * 0.4
     overlay = np.clip(overlay, 0, 255).astype(np.uint8)
     overlay_with_waveform = draw_waveform_overlay(overlay, audio)
 
@@ -535,9 +538,15 @@ async def predict_audio(
         gradcam_path = GRADCAM_DIR / gradcam_filename
         overlay_waveform_path = OVERLAY_WAVEFORM_DIR / overlay_waveform_filename
 
-        Image.fromarray(stft_image).save(spectrogram_path)
-        Image.fromarray(gradcam_img).save(gradcam_path)
-        Image.fromarray(overlay_waveform_img).save(overlay_waveform_path)
+        render_axis_panel(stft_image).save(spectrogram_path)
+        render_axis_panel(
+            gradcam_img,
+            show_contribution_scale=True,
+        ).save(gradcam_path)
+        render_axis_panel(
+            overlay_waveform_img,
+            show_waveform_legend=True,
+        ).save(overlay_waveform_path)
         cleanup_old_outputs()
 
         return {
