@@ -8,15 +8,14 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from PIL import Image
 
-
 LOW_CUT = 100
 HIGH_CUT = 1800
 
 
 def apply_spectrogram_colormap(normalized: np.ndarray) -> np.ndarray:
-    """Map a normalized STFT matrix to the magma RGB palette used in training."""
+    """Map a normalized STFT matrix to the reversed magma palette used in training."""
     values = np.clip(normalized, 0.0, 1.0)
-    return colormaps["magma"](values, bytes=True)[..., :3]
+    return colormaps["magma_r"](values, bytes=True)[..., :3]
 
 
 def apply_gradcam_colormap(heatmap: np.ndarray) -> np.ndarray:
@@ -38,11 +37,7 @@ def render_axis_panel(
     axis.imshow(image)
 
     frequency_ticks = np.linspace(LOW_CUT, HIGH_CUT, 6)
-    pixel_ticks = (
-        (HIGH_CUT - frequency_ticks)
-        / (HIGH_CUT - LOW_CUT)
-        * (height - 1)
-    )
+    pixel_ticks = (HIGH_CUT - frequency_ticks) / (HIGH_CUT - LOW_CUT) * (height - 1)
     axis.set_yticks(pixel_ticks)
     axis.set_yticklabels([f"{frequency:.0f} Hz" for frequency in frequency_ticks])
     time_ticks = np.arange(0, width, 50)
