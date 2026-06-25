@@ -13,9 +13,15 @@ HIGH_CUT = 1800
 
 
 def apply_spectrogram_colormap(normalized: np.ndarray) -> np.ndarray:
-    """Map a normalized STFT matrix to the reversed magma palette used in training."""
+    """Map a normalized STFT matrix for the standalone web spectrogram."""
     values = np.clip(normalized, 0.0, 1.0)
     return colormaps["magma_r"](values, bytes=True)[..., :3]
+
+
+def apply_model_spectrogram_colormap(normalized: np.ndarray) -> np.ndarray:
+    """Map a normalized STFT matrix to the palette used by Grad-CAM/overlay."""
+    values = np.clip(normalized, 0.0, 1.0)
+    return colormaps["magma"](values, bytes=True)[..., :3]
 
 
 def apply_gradcam_colormap(heatmap: np.ndarray) -> np.ndarray:

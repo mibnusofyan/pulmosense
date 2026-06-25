@@ -22,6 +22,7 @@ from tensorflow.keras.applications.vgg19 import preprocess_input as vgg19_prepro
 
 from visualization import (
     apply_gradcam_colormap,
+    apply_model_spectrogram_colormap,
     apply_spectrogram_colormap,
     render_axis_panel,
 )
@@ -279,7 +280,9 @@ def preprocess_audio(audio: np.ndarray, sr: int) -> np.ndarray:
     return pad_or_trim(audio.astype(np.float32), target_len)
 
 
-def wav_bytes_to_stft_image(wav_bytes: bytes) -> tuple[np.ndarray, np.ndarray, int]:
+def wav_bytes_to_stft_image(
+    wav_bytes: bytes,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     raw_audio, sr = read_wav_bytes(wav_bytes)
     audio = preprocess_audio(raw_audio, sr)
 
@@ -304,11 +307,16 @@ def wav_bytes_to_stft_image(wav_bytes: bytes) -> tuple[np.ndarray, np.ndarray, i
 
     image = np.flipud((normalized * 255).astype(np.uint8))
     pil_image = Image.fromarray(image, mode="L").resize(IMG_SIZE, RESAMPLE_BILINEAR)
-    rgb_image = apply_spectrogram_colormap(
-        np.asarray(pil_image, dtype=np.float32) / 255.0
-    )
+    resized_normalized = np.asarray(pil_image, dtype=np.float32) / 255.0
+    model_image = apply_model_spectrogram_colormap(resized_normalized)
+    spectrogram_image = apply_spectrogram_colormap(resized_normalized)
 
-    return np.asarray(rgb_image, dtype=np.uint8), audio, sr
+    return (
+        np.asarray(model_image, dtype=np.uint8),
+        np.asarray(spectrogram_image, dtype=np.uint8),
+        audio,
+        sr,
+    )
 
 
 def make_model_input(stft_image: np.ndarray, model_name: str) -> np.ndarray:
@@ -511,17 +519,19 @@ async def predict_audio(
         wav_bytes = await file.read()
         selected_model = get_model(selected_model_name)
 
-        stft_image, audio, sr = wav_bytes_to_stft_image(wav_bytes)
+        stft_model_image, stft_display_image, audio, sr = wav_bytes_to_stft_image(
+            wav_bytes
+        )
         label, confidence, preds = predict_image(
             model=selected_model,
-            stft_image=stft_image,
+            stft_image=stft_model_image,
             model_name=selected_model_name,
         )
 
         pred_idx = int(np.argmax(preds))
         gradcam_img, overlay_waveform_img, frequency_focus = gradcam_outputs(
             model=selected_model,
-            stft_image=stft_image,
+            stft_image=stft_model_image,
             audio=audio,
             model_name=selected_model_name,
             pred_idx=pred_idx,
@@ -538,7 +548,7 @@ async def predict_audio(
         gradcam_path = GRADCAM_DIR / gradcam_filename
         overlay_waveform_path = OVERLAY_WAVEFORM_DIR / overlay_waveform_filename
 
-        render_axis_panel(stft_image).save(spectrogram_path)
+        render_axis_panel(stft_display_image).save(spectrogram_path)
         render_axis_panel(
             gradcam_img,
             show_contribution_scale=True,
